@@ -1,0 +1,66 @@
+{
+    "name": "tigusigalpa/cryptopanic-php",
+    "description": "Framework-agnostic PHP SDK for the CryptoPanic API with a first-class Laravel bridge.",
+    "keywords": [
+        "cryptopanic",
+        "sdk",
+        "api",
+        "crypto",
+        "news",
+        "laravel",
+        "rss",
+        "portfolio"
+    ],
+    "license": "MIT",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Igor Sazonov",
+            "email": "sovletig@gmail.com",
+            "homepage": "https://github.com/tigusigalpa"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "ext-json": "*",
+        "ext-curl": "*",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.0",
+        "psr/http-message": "^1.0 || ^2.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5 || ^10.0 || ^11.0",
+        "orchestra/testbench": "^8.0 || ^9.0 || ^10.0",
+        "guzzlehttp/guzzle": "^7.0",
+        "phpstan/phpstan": "^1.10 || ^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tigusigalpa\\CryptoPanic\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tigusigalpa\\CryptoPanic\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Tigusigalpa\\CryptoPanic\\Laravel\\CryptoPanicServiceProvider"
+            ],
+            "aliases": {
+                "CryptoPanic": "Tigusigalpa\\CryptoPanic\\Laravel\\Facades\\CryptoPanic"
+            }
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite Unit",
+        "test:feature": "phpunit --testsuite Feature",
+        "analyse": "phpstan analyse",
+        "validate": "composer validate --strict"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
