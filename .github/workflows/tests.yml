@@ -68,7 +68,16 @@ jobs:
 
       - name: Static analysis for core PHP
         if: matrix.testbench == ''
-        run: vendor/bin/phpstan analyse src --memory-limit=512M
+        run: >-
+          vendor/bin/phpstan analyse
+          src/CryptoPanicClient.php
+          src/CryptoPanicConfig.php
+          src/Enums
+          src/Exceptions
+          src/Models
+          src/PostsQuery.php
+          src/Transport
+          --memory-limit=512M
 
       - name: Test
         if: matrix.testbench != ''

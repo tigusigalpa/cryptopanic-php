@@ -1,4 +1,4 @@
-# cryptopanic-php
+# Cryptopanic PHP/Laravel Client/SDK/Library
 
 ![CryptoPanic PHP Laravel SDK](https://i.postimg.cc/nVggY4fL/cryptopanic-php-github.jpg)
 
@@ -7,7 +7,7 @@
 [![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF.svg)](https://www.php.net/)
 [![Tests](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/tests.yml)
 [![Coverage workflow](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/coverage.yml)
-[![CodeQL](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/codeql.yml)
+[![CodeQL workflows](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/tigusigalpa/cryptopanic-php/graph/badge.svg)](https://codecov.io/gh/tigusigalpa/cryptopanic-php)
 [![PHPStan](https://img.shields.io/badge/PHPStan-level%205-brightgreen.svg)](https://phpstan.org/)
 [![Latest release](https://img.shields.io/github/v/release/tigusigalpa/cryptopanic-php)](https://github.com/tigusigalpa/cryptopanic-php/releases)

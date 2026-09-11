@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Early validation for malformed base URLs, plans, timeouts, and retry configuration.
 - Production-pipeline tests using a queue-backed PSR-18 client instead of a duplicated test client implementation.
 - A CI matrix covering the PHP 8.1 framework-neutral client plus supported Laravel 12 and 13 integrations.
-- GitHub Actions workflows for the PHP/Laravel test matrix, PCOV coverage with Codecov upload, and weekly CodeQL scans.
+- GitHub Actions workflows for the PHP/Laravel test matrix, PCOV coverage with Codecov upload, and weekly CodeQL scanning of GitHub Actions workflows.
 - Dependabot updates for Composer and GitHub Actions dependencies.
 
 ### Changed
