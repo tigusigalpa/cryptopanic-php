@@ -1,0 +1,67 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php-version }} / Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php-version: '8.1'
+            testbench: '^8.0'
+            laravel: '10'
+          - php-version: '8.2'
+            testbench: '^9.0'
+            laravel: '11'
+          - php-version: '8.2'
+            testbench: '^10.0'
+            laravel: '12'
+          - php-version: '8.3'
+            testbench: '^11.0'
+            laravel: '13'
+          - php-version: '8.4'
+            testbench: '^11.0'
+            laravel: '13'
+          - php-version: '8.5'
+            testbench: '^11.0'
+            laravel: '13'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: curl, json
+          coverage: none
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Select Laravel test harness
+        run: composer require --dev --no-update orchestra/testbench:"${{ matrix.testbench }}"
+
+      - name: Resolve dependencies
+        run: composer update --prefer-dist --no-interaction
+
+      - name: Audit dependencies
+        run: composer audit
+
+      - name: Static analysis
+        run: composer analyse
+
+      - name: Test
+        run: composer test

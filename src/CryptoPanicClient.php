@@ -55,11 +55,7 @@ class CryptoPanicClient
         ?Psr18Client $psrClient = null,
         ?RequestFactoryInterface $requestFactory = null,
     ) {
-        if ($config->authToken === '') {
-            throw new ConfigurationException(
-                'CryptoPanic auth token is required. Set it via CryptoPanicConfig or the CRYPTOPANIC_AUTH_TOKEN environment variable.'
-            );
-        }
+        $this->validateConfiguration();
 
         $this->curlTransport = new CurlTransport();
         $this->psrClient = $psrClient;
@@ -100,6 +96,51 @@ class CryptoPanicClient
     public function getConfig(): CryptoPanicConfig
     {
         return $this->config;
+    }
+
+    /**
+     * Validate settings that would otherwise cause an opaque transport error
+     * or an unbounded retry delay.
+     *
+     * @throws ConfigurationException
+     */
+    private function validateConfiguration(): void
+    {
+        if (trim($this->config->authToken) === '') {
+            throw new ConfigurationException(
+                'CryptoPanic auth token is required. Set it via CryptoPanicConfig or the CRYPTOPANIC_AUTH_TOKEN environment variable.'
+            );
+        }
+
+        if (preg_match('/\A[A-Za-z0-9_-]+\z/D', $this->config->apiPlan) !== 1) {
+            throw new ConfigurationException('CryptoPanic API plan must contain only letters, numbers, hyphens, or underscores.');
+        }
+
+        $baseUrl = parse_url($this->config->baseUrl);
+        if (
+            $baseUrl === false
+            || !isset($baseUrl['scheme'], $baseUrl['host'])
+            || !in_array(strtolower($baseUrl['scheme']), ['http', 'https'], true)
+            || isset($baseUrl['query'], $baseUrl['fragment'], $baseUrl['user'], $baseUrl['pass'])
+        ) {
+            throw new ConfigurationException('CryptoPanic base URL must be an absolute HTTP(S) URL without credentials, query parameters, or a fragment.');
+        }
+
+        if (!is_finite($this->config->timeout) || $this->config->timeout <= 0) {
+            throw new ConfigurationException('CryptoPanic timeout must be a positive finite number of seconds.');
+        }
+
+        if ($this->config->retryAttempts < 0) {
+            throw new ConfigurationException('CryptoPanic retry attempts cannot be negative.');
+        }
+
+        if (!is_finite($this->config->retryDelay) || $this->config->retryDelay < 0) {
+            throw new ConfigurationException('CryptoPanic retry delay must be a non-negative finite number of seconds.');
+        }
+
+        if (!is_finite($this->config->retryMaxDelay) || $this->config->retryMaxDelay <= 0) {
+            throw new ConfigurationException('CryptoPanic retry maximum delay must be a positive finite number of seconds.');
+        }
     }
 
     /**
@@ -188,7 +229,7 @@ class CryptoPanicClient
         try {
             $response = $this->sendRequest($url, $headers);
         } catch (TransportException $e) {
-            if ($attempt < $this->config->retryAttempts) {
+            if ($e->retryable && $attempt < $this->config->retryAttempts) {
                 $this->sleep($this->calculateRetryDelay(null, $attempt));
                 return $this->doGet($path, $query, $attempt + 1);
             }
@@ -222,7 +263,7 @@ class CryptoPanicClient
         try {
             $response = $this->sendRequest($url, $headers);
         } catch (TransportException $e) {
-            if ($attempt < $this->config->retryAttempts) {
+            if ($e->retryable && $attempt < $this->config->retryAttempts) {
                 $this->sleep($this->calculateRetryDelay(null, $attempt));
                 return $this->doGetRaw($path, $query, $attempt + 1);
             }
@@ -289,7 +330,7 @@ class CryptoPanicClient
             return $this->sendPsr18Request($url, $headers);
         }
 
-        return $this->curlTransport->get($url, $headers, $this->config->timeout);
+        return $this->curlTransport->get($url, $headers, $this->config->timeout, $this->config->authToken);
     }
 
     /**
@@ -309,7 +350,9 @@ class CryptoPanicClient
         try {
             $psrResponse = $this->psrClient->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
-            throw new TransportException('PSR-18 client error: ' . $e->getMessage(), 0, $e);
+            // Do not chain the original exception: PSR-18 implementations
+            // sometimes include the full request URL in their error message.
+            throw new TransportException('PSR-18 client error: ' . $this->redactString($e->getMessage()));
         }
 
         $responseHeaders = [];
@@ -345,7 +388,7 @@ class CryptoPanicClient
      */
     private function throwForStatus(HttpResponse $response, int $attempt): never
     {
-        $decoded = $this->decodeBodySafe($response->body);
+        $decoded = $this->redactToken($this->decodeBodySafe($response->body));
         $message = $this->extractMessage($decoded);
         $requestId = $response->getHeader('x-request-id');
 
@@ -429,19 +472,47 @@ class CryptoPanicClient
     }
 
     /**
-     * Calculate the retry delay, honoring Retry-After or using
-     * exponential backoff. Pass null for $response when retrying
-     * after a transport-level failure with no HTTP response.
+     * Calculate the retry delay, honoring both forms of Retry-After and
+     * capping all waits. Pass null for $response when retrying after a
+     * transport-level failure with no HTTP response.
      */
     private function calculateRetryDelay(?HttpResponse $response, int $attempt): float
     {
-        $retryAfter = $response?->getHeader('retry-after');
-        if ($retryAfter !== null && is_numeric($retryAfter)) {
-            return (float)$retryAfter;
+        $maxDelay = $this->config->retryMaxDelay;
+        $retryAfter = $this->parseRetryAfter($response?->getHeader('retry-after'));
+        if ($retryAfter !== null) {
+            return min($retryAfter, $maxDelay);
         }
 
-        $base = $this->config->retryDelay > 0 ? $this->config->retryDelay : 1.0;
-        return $base * pow(2, $attempt);
+        $delay = min($this->config->retryDelay, $maxDelay);
+        for ($index = 0; $index < $attempt && $delay < $maxDelay; $index++) {
+            $delay = min($delay * 2, $maxDelay);
+        }
+
+        return $delay;
+    }
+
+    /**
+     * Parse Retry-After as either delta-seconds or an HTTP-date.
+     */
+    private function parseRetryAfter(?string $retryAfter): ?float
+    {
+        if ($retryAfter === null || trim($retryAfter) === '') {
+            return null;
+        }
+
+        $value = trim($retryAfter);
+        if (is_numeric($value) && (float)$value >= 0) {
+            return (float)$value;
+        }
+
+        try {
+            $delay = (new DateTimeImmutable($value))->getTimestamp() - time();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return (float)max(0, $delay);
     }
 
     /**
@@ -463,12 +534,23 @@ class CryptoPanicClient
     /**
      * Parse the decoded JSON into a PostsPage with typed Post models.
      *
-     * @param array<string, mixed> $decoded
      */
-    private function parsePostsPage(array $decoded): PostsPage
+    private function parsePostsPage(mixed $decoded): PostsPage
     {
+        if (!is_array($decoded)) {
+            throw new DecodingException('Expected a JSON object for the posts response.');
+        }
+
+        $items = $decoded['results'] ?? null;
+        if (!is_array($items)) {
+            throw new DecodingException('Expected the posts response to contain a results array.');
+        }
+
         $results = [];
-        foreach ($decoded['results'] ?? [] as $item) {
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                throw new DecodingException('Expected every item in the posts response to be a JSON object.');
+            }
             $results[] = $this->parsePost($item);
         }
 
@@ -502,10 +584,10 @@ class CryptoPanicClient
         $source = null;
         if (isset($item['source']) && is_array($item['source'])) {
             $source = new PostSource(
-                title: $item['source']['title'] ?? null,
-                region: $item['source']['region'] ?? null,
-                domain: $item['source']['domain'] ?? null,
-                path: $item['source']['path'] ?? null,
+                title: $this->nullableString($item['source']['title'] ?? null),
+                region: $this->nullableString($item['source']['region'] ?? null),
+                domain: $this->nullableString($item['source']['domain'] ?? null),
+                path: $this->nullableString($item['source']['path'] ?? null),
                 createdAt: $this->parseDate($item['source']['created_at'] ?? null),
             );
         }
@@ -514,13 +596,13 @@ class CryptoPanicClient
         foreach ($item['instruments'] ?? [] as $inst) {
             if (is_array($inst)) {
                 $instruments[] = new PostInstrument(
-                    id: $inst['id'] ?? null,
-                    code: $inst['code'] ?? null,
-                    slug: $inst['slug'] ?? null,
-                    title: $inst['title'] ?? null,
-                    volume: isset($inst['volume']) ? (float)$inst['volume'] : null,
-                    change: isset($inst['change']) ? (float)$inst['change'] : null,
-                    currency: $inst['currency'] ?? null,
+                    id: $this->nullableInt($inst['id'] ?? null),
+                    code: $this->nullableString($inst['code'] ?? null),
+                    slug: $this->nullableString($inst['slug'] ?? null),
+                    title: $this->nullableString($inst['title'] ?? null),
+                    volume: $this->nullableFloat($inst['volume'] ?? null),
+                    change: $this->nullableFloat($inst['change'] ?? null),
+                    currency: $this->nullableString($inst['currency'] ?? null),
                 );
             }
         }
@@ -528,55 +610,55 @@ class CryptoPanicClient
         $votes = null;
         if (isset($item['votes']) && is_array($item['votes'])) {
             $votes = new PostVotes(
-                positive: $item['votes']['positive'] ?? null,
-                negative: $item['votes']['negative'] ?? null,
-                important: $item['votes']['important'] ?? null,
-                liked: $item['votes']['liked'] ?? null,
-                disliked: $item['votes']['disliked'] ?? null,
-                lol: $item['votes']['lol'] ?? null,
-                toxic: $item['votes']['toxic'] ?? null,
-                comments: $item['votes']['comments'] ?? null,
-                saved: $item['votes']['saved'] ?? null,
+                positive: $this->nullableInt($item['votes']['positive'] ?? null),
+                negative: $this->nullableInt($item['votes']['negative'] ?? null),
+                important: $this->nullableInt($item['votes']['important'] ?? null),
+                liked: $this->nullableInt($item['votes']['liked'] ?? null),
+                disliked: $this->nullableInt($item['votes']['disliked'] ?? null),
+                lol: $this->nullableInt($item['votes']['lol'] ?? null),
+                toxic: $this->nullableInt($item['votes']['toxic'] ?? null),
+                comments: $this->nullableInt($item['votes']['comments'] ?? null),
+                saved: $this->nullableInt($item['votes']['saved'] ?? null),
             );
         }
 
         $author = null;
         if (isset($item['author']) && is_array($item['author'])) {
             $author = new PostAuthor(
-                id: $item['author']['id'] ?? null,
-                name: $item['author']['name'] ?? null,
-                slug: $item['author']['slug'] ?? null,
-                url: $item['author']['url'] ?? null,
-                avatar: $item['author']['avatar'] ?? null,
-                twitter: $item['author']['twitter'] ?? null,
-                facebook: $item['author']['facebook'] ?? null,
-                linkedIn: $item['author']['linkedin'] ?? null,
+                id: $this->nullableInt($item['author']['id'] ?? null),
+                name: $this->nullableString($item['author']['name'] ?? null),
+                slug: $this->nullableString($item['author']['slug'] ?? null),
+                url: $this->nullableString($item['author']['url'] ?? null),
+                avatar: $this->nullableString($item['author']['avatar'] ?? null),
+                twitter: $this->nullableString($item['author']['twitter'] ?? null),
+                facebook: $this->nullableString($item['author']['facebook'] ?? null),
+                linkedIn: $this->nullableString($item['author']['linkedin'] ?? null),
             );
         }
 
         $content = null;
         if (isset($item['content']) && is_array($item['content'])) {
             $content = new PostContent(
-                raw: $item['content']['raw'] ?? null,
+                raw: $this->nullableString($item['content']['raw'] ?? null),
             );
         }
 
         return new Post(
-            id: $item['id'] ?? null,
-            slug: $item['slug'] ?? null,
-            title: $item['title'] ?? null,
-            description: $item['description'] ?? null,
+            id: $this->nullableInt($item['id'] ?? null),
+            slug: $this->nullableString($item['slug'] ?? null),
+            title: $this->nullableString($item['title'] ?? null),
+            description: $this->nullableString($item['description'] ?? null),
             publishedAt: $this->parseDate($item['published_at'] ?? null),
             createdAt: $this->parseDate($item['created_at'] ?? null),
-            kind: $item['kind'] ?? null,
+            kind: $this->nullableString($item['kind'] ?? null),
             source: $source,
-            originalUrl: $item['original_url'] ?? null,
-            url: $item['url'] ?? null,
-            image: $item['image'] ?? null,
+            originalUrl: $this->nullableString($item['original_url'] ?? null),
+            url: $this->nullableString($item['url'] ?? null),
+            image: $this->nullableString($item['image'] ?? null),
             instruments: $instruments,
             votes: $votes,
-            panicScore: $item['panic_score'] ?? null,
-            panicScore1h: $item['panic_score_1h'] ?? null,
+            panicScore: $this->nullableInt($item['panic_score'] ?? null),
+            panicScore1h: $this->nullableInt($item['panic_score_1h'] ?? null),
             author: $author,
             content: $content,
         );
@@ -606,6 +688,34 @@ class CryptoPanicClient
         return $date;
     }
 
+    private function nullableString(mixed $value): ?string
+    {
+        return is_string($value) ? $value : null;
+    }
+
+    private function nullableInt(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_float($value) && is_finite($value) && floor($value) === $value) {
+            return (int)$value;
+        }
+
+        return null;
+    }
+
+    private function nullableFloat(mixed $value): ?float
+    {
+        if (!is_int($value) && !is_float($value) && !(is_string($value) && is_numeric($value))) {
+            return null;
+        }
+
+        $number = (float)$value;
+        return is_finite($number) ? $number : null;
+    }
+
     /**
      * Redact the auth_token parameter from a URL string.
      */
@@ -616,8 +726,8 @@ class CryptoPanicClient
         }
 
         $parsed = parse_url($url);
-        if (!isset($parsed['query'])) {
-            return $url;
+        if ($parsed === false || !isset($parsed['query'])) {
+            return $this->redactString($url);
         }
 
         parse_str($parsed['query'], $query);
@@ -642,7 +752,7 @@ class CryptoPanicClient
     private function parsePageFromUrl(string $url): ?int
     {
         $parsed = parse_url($url);
-        if (!isset($parsed['query'])) {
+        if ($parsed === false || !isset($parsed['query'])) {
             return null;
         }
 
@@ -653,5 +763,36 @@ class CryptoPanicClient
         }
 
         return (int)$page;
+    }
+
+    /**
+     * Redact the token everywhere an API or transport error could expose it.
+     * The API should never echo credentials, but server and proxy failures
+     * are not a safe reason to leak one into an application's logs.
+     */
+    private function redactToken(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            foreach ($value as $key => $item) {
+                $value[$key] = $this->redactToken($item);
+            }
+            return $value;
+        }
+
+        return is_string($value) ? $this->redactString($value) : $value;
+    }
+
+    private function redactString(string $value): string
+    {
+        $token = $this->config->authToken;
+        if ($token === '') {
+            return $value;
+        }
+
+        return str_replace(
+            array_unique([$token, rawurlencode($token), urlencode($token)]),
+            '[REDACTED]',
+            $value,
+        );
     }
 }

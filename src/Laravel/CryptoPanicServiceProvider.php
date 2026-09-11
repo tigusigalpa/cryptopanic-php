@@ -38,6 +38,7 @@ final class CryptoPanicServiceProvider extends ServiceProvider
                 'timeout' => $config['timeout'] ?? CryptoPanicConfig::DEFAULT_TIMEOUT,
                 'retry_attempts' => $config['retry_attempts'] ?? CryptoPanicConfig::DEFAULT_RETRY_ATTEMPTS,
                 'retry_delay' => $config['retry_delay'] ?? CryptoPanicConfig::DEFAULT_RETRY_DELAY,
+                'retry_max_delay' => $config['retry_max_delay'] ?? CryptoPanicConfig::DEFAULT_RETRY_MAX_DELAY,
                 'user_agent' => $config['user_agent'] ?? CryptoPanicConfig::DEFAULT_USER_AGENT,
             ]));
         });

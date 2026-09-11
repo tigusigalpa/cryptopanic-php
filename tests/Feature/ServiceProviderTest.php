@@ -37,6 +37,7 @@ class ServiceProviderTest extends TestCase
         self::assertArrayHasKey('auth_token', $config);
         self::assertArrayHasKey('api_plan', $config);
         self::assertArrayHasKey('base_url', $config);
+        self::assertArrayHasKey('retry_max_delay', $config);
     }
 
     public function test_config_values_from_test_environment(): void

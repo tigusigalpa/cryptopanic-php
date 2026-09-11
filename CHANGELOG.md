@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-11
+
+### Added
+- `retry_max_delay` / `CRYPTOPANIC_RETRY_MAX_DELAY` configuration, defaulting to 30 seconds, to cap retry waits.
+- Support for both delta-seconds and HTTP-date forms of the `Retry-After` header.
+- Early validation for malformed base URLs, plans, timeouts, and retry configuration.
+- Production-pipeline tests using a queue-backed PSR-18 client instead of a duplicated test client implementation.
+- Laravel 13 test coverage through Orchestra Testbench 11, while retaining the earlier supported Laravel versions.
+- GitHub Actions workflows for the PHP/Laravel test matrix, PCOV coverage with Codecov upload, and weekly CodeQL scans.
+- Dependabot updates for Composer and GitHub Actions dependencies.
+
+### Changed
+- API error messages and decoded error data now redact the configured auth token, including URL-encoded forms.
+- cURL requests no longer automatically follow redirects because the API token is sent in the query string.
+- cURL honours sub-second configured timeouts.
+- cURL retries only failures that are plausibly transient; permanent local failures return immediately.
+- Retry backoff is safely capped and cannot overflow for a large attempt count.
+
 ## [1.0.0] - 2025-01-15
 
 ### Added

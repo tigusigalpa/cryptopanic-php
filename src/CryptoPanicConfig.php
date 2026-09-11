@@ -20,7 +20,8 @@ final class CryptoPanicConfig
     public const DEFAULT_TIMEOUT = 15.0;
     public const DEFAULT_RETRY_ATTEMPTS = 0;
     public const DEFAULT_RETRY_DELAY = 1.0;
-    public const DEFAULT_USER_AGENT = 'cryptopanic-php/1.0.0';
+    public const DEFAULT_RETRY_MAX_DELAY = 30.0;
+    public const DEFAULT_USER_AGENT = 'cryptopanic-php/1.1.0';
 
     /**
      * @param string $authToken     CryptoPanic auth token.
@@ -29,6 +30,7 @@ final class CryptoPanicConfig
      * @param float  $timeout       Request timeout in seconds.
      * @param int    $retryAttempts Number of retries on 429/5xx (0 = no retry).
      * @param float  $retryDelay    Base delay in seconds for exponential backoff.
+     * @param float  $retryMaxDelay Maximum delay in seconds between retries.
      * @param string $userAgent     User-Agent header value.
      */
     public function __construct(
@@ -38,6 +40,7 @@ final class CryptoPanicConfig
         public readonly float $timeout = self::DEFAULT_TIMEOUT,
         public readonly int $retryAttempts = self::DEFAULT_RETRY_ATTEMPTS,
         public readonly float $retryDelay = self::DEFAULT_RETRY_DELAY,
+        public readonly float $retryMaxDelay = self::DEFAULT_RETRY_MAX_DELAY,
         public readonly string $userAgent = self::DEFAULT_USER_AGENT,
     ) {
     }
@@ -56,6 +59,7 @@ final class CryptoPanicConfig
             timeout: (float)($data['timeout'] ?? self::DEFAULT_TIMEOUT),
             retryAttempts: (int)($data['retry_attempts'] ?? self::DEFAULT_RETRY_ATTEMPTS),
             retryDelay: (float)($data['retry_delay'] ?? self::DEFAULT_RETRY_DELAY),
+            retryMaxDelay: (float)($data['retry_max_delay'] ?? self::DEFAULT_RETRY_MAX_DELAY),
             userAgent: (string)($data['user_agent'] ?? self::DEFAULT_USER_AGENT),
         );
     }
@@ -66,12 +70,19 @@ final class CryptoPanicConfig
     public static function fromEnv(): self
     {
         return new self(
-            authToken: (string)(getenv('CRYPTOPANIC_AUTH_TOKEN') ?: ''),
-            apiPlan: (string)(getenv('CRYPTOPANIC_API_PLAN') ?: self::DEFAULT_PLAN),
-            baseUrl: (string)(getenv('CRYPTOPANIC_BASE_URL') ?: self::DEFAULT_BASE_URL),
-            timeout: (float)(getenv('CRYPTOPANIC_TIMEOUT') ?: self::DEFAULT_TIMEOUT),
-            retryAttempts: (int)(getenv('CRYPTOPANIC_RETRY_ATTEMPTS') ?: self::DEFAULT_RETRY_ATTEMPTS),
-            retryDelay: (float)(getenv('CRYPTOPANIC_RETRY_DELAY') ?: self::DEFAULT_RETRY_DELAY),
+            authToken: self::env('CRYPTOPANIC_AUTH_TOKEN', ''),
+            apiPlan: self::env('CRYPTOPANIC_API_PLAN', self::DEFAULT_PLAN),
+            baseUrl: self::env('CRYPTOPANIC_BASE_URL', self::DEFAULT_BASE_URL),
+            timeout: (float)self::env('CRYPTOPANIC_TIMEOUT', (string)self::DEFAULT_TIMEOUT),
+            retryAttempts: (int)self::env('CRYPTOPANIC_RETRY_ATTEMPTS', (string)self::DEFAULT_RETRY_ATTEMPTS),
+            retryDelay: (float)self::env('CRYPTOPANIC_RETRY_DELAY', (string)self::DEFAULT_RETRY_DELAY),
+            retryMaxDelay: (float)self::env('CRYPTOPANIC_RETRY_MAX_DELAY', (string)self::DEFAULT_RETRY_MAX_DELAY),
         );
+    }
+
+    private static function env(string $name, string $default): string
+    {
+        $value = getenv($name);
+        return $value === false || $value === '' ? $default : $value;
     }
 }

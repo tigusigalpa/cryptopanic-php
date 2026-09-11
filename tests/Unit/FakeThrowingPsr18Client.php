@@ -21,6 +21,7 @@ final class FakeThrowingPsr18Client implements ClientInterface
     public function __construct(
         private readonly int $failuresBeforeSuccess,
         private readonly ResponseInterface $successResponse,
+        private readonly string $failureMessage = 'Simulated transport failure',
     ) {
     }
 
@@ -28,7 +29,7 @@ final class FakeThrowingPsr18Client implements ClientInterface
     {
         $this->callCount++;
         if ($this->callCount <= $this->failuresBeforeSuccess) {
-            throw new FakeClientException('Simulated transport failure');
+            throw new FakeClientException($this->failureMessage);
         }
         return $this->successResponse;
     }

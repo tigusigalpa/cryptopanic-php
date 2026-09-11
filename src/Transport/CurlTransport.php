@@ -20,14 +20,18 @@ class CurlTransport
      * @param string               $url     Full request URL.
      * @param array<string,string> $headers HTTP headers to send.
      * @param float                $timeout Timeout in seconds.
+     * @param string               $authToken Token used to redact cURL error messages.
      *
      * @return HttpResponse
      *
      * @throws TransportException On cURL errors.
      */
-    public function get(string $url, array $headers, float $timeout): HttpResponse
+    public function get(string $url, array $headers, float $timeout, string $authToken = ''): HttpResponse
     {
         $ch = curl_init();
+        if ($ch === false) {
+            throw new TransportException('Unable to initialize cURL.', 0, null, false);
+        }
 
         $headerLines = [];
         foreach ($headers as $key => $value) {
@@ -38,21 +42,31 @@ class CurlTransport
             CURLOPT_URL => $url,
             CURLOPT_HTTPHEADER => $headerLines,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => (int)ceil($timeout),
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT_MS => max(1, (int)round($timeout * 1_000)),
+            // Required by libcurl for reliable sub-second timeouts on Unix.
+            CURLOPT_NOSIGNAL => true,
+            // The token is a query parameter. Following a cross-host redirect
+            // would disclose it to the redirect target.
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXREDIRS => 3,
             CURLOPT_HEADER => true,
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HTTPGET => true,
         ]);
 
         $response = curl_exec($ch);
 
         if ($response === false) {
-            $error = curl_error($ch);
+            $error = $this->redactToken(curl_error($ch), $authToken);
             $errno = curl_errno($ch);
             curl_close($ch);
-            throw new TransportException("cURL error ({$errno}): {$error}");
+            throw new TransportException(
+                "cURL error ({$errno}): {$error}",
+                $errno,
+                null,
+                $this->isRetryableCurlError($errno),
+            );
         }
 
         $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -89,5 +103,36 @@ class CurlTransport
         }
 
         return $headers;
+    }
+
+    /**
+     * Only retry cURL failures that are plausibly transient. Invalid URLs,
+     * certificate errors, and local configuration failures cannot succeed on
+     * another identical request.
+     */
+    private function isRetryableCurlError(int $errno): bool
+    {
+        return in_array($errno, [
+            CURLE_COULDNT_RESOLVE_HOST,
+            CURLE_COULDNT_CONNECT,
+            CURLE_OPERATION_TIMEDOUT,
+            CURLE_PARTIAL_FILE,
+            CURLE_GOT_NOTHING,
+            CURLE_SEND_ERROR,
+            CURLE_RECV_ERROR,
+        ], true);
+    }
+
+    private function redactToken(string $value, string $authToken): string
+    {
+        if ($authToken === '') {
+            return $value;
+        }
+
+        return str_replace(
+            array_unique([$authToken, rawurlencode($authToken), urlencode($authToken)]),
+            '[REDACTED]',
+            $value,
+        );
     }
 }

@@ -1,0 +1,58 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: PHPUnit coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, json
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Select Laravel 13 test harness
+        run: composer require --dev --no-update orchestra/testbench:"^11.0"
+
+      - name: Resolve dependencies
+        run: composer update --prefer-dist --no-interaction
+
+      - name: Generate coverage report
+        run: composer test:coverage
+
+      - name: Upload coverage artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: clover-coverage
+          path: coverage/clover.xml
+          if-no-files-found: warn
+
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: coverage/clover.xml
+          flags: php
+          fail_ci_if_error: false
+          verbose: true

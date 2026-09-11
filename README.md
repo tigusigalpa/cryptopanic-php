@@ -5,6 +5,12 @@
 [![Packagist](https://img.shields.io/packagist/v/tigusigalpa/cryptopanic-php.svg)](https://packagist.org/packages/tigusigalpa/cryptopanic-php)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF.svg)](https://www.php.net/)
+[![Tests](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/tests.yml)
+[![Coverage workflow](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/coverage.yml)
+[![CodeQL](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/cryptopanic-php/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/tigusigalpa/cryptopanic-php/graph/badge.svg)](https://codecov.io/gh/tigusigalpa/cryptopanic-php)
+[![PHPStan](https://img.shields.io/badge/PHPStan-level%205-brightgreen.svg)](https://phpstan.org/)
+[![Latest release](https://img.shields.io/github/v/release/tigusigalpa/cryptopanic-php)](https://github.com/tigusigalpa/cryptopanic-php/releases)
 
 A framework-neutral PHP SDK for the [CryptoPanic API](https://cryptopanic.com/developers/api/) with a first-class
 Laravel bridge.
@@ -53,6 +59,8 @@ build PHP applications:
 - PHP 8.1 or newer.
 - `ext-json` and `ext-curl`.
 - Composer.
+
+The Laravel bridge is tested against Laravel 10 through 13. Laravel 13 itself requires PHP 8.3 or newer.
 
 ```bash
 composer require tigusigalpa/cryptopanic-php
@@ -126,6 +134,7 @@ one client and reuse it rather than constructing a new client for every request.
 | `CRYPTOPANIC_TIMEOUT`        | Request timeout in seconds                               | `15`                          |
 | `CRYPTOPANIC_RETRY_ATTEMPTS` | Retries after the initial request for transient failures | `0`                           |
 | `CRYPTOPANIC_RETRY_DELAY`    | Initial retry delay in seconds                           | `1`                           |
+| `CRYPTOPANIC_RETRY_MAX_DELAY`| Maximum delay between retries in seconds                 | `30`                          |
 
 The User-Agent has a safe package default. Set a custom value through `CryptoPanicConfig` or an array passed to
 `fromArray()`; it is not read from an environment variable by `fromEnv()`.
@@ -145,6 +154,7 @@ $config = CryptoPanicConfig::fromArray([
     'timeout' => 10.0,
     'retry_attempts' => 3,
     'retry_delay' => 0.5,
+    'retry_max_delay' => 10.0,
     'user_agent' => 'my-news-service/1.0',
 ]);
 
@@ -416,8 +426,8 @@ $client = new CryptoPanicClient($config);
 - **Retried HTTP statuses:** 429, 500, 502, and 503.
 - **Retried transport failures:** cURL and PSR-18 transport exceptions are retried when attempts remain.
 - **Not retried:** 400, 401, 403, 404, and other non-transient API errors.
-- **Delay:** exponential backoff using `retryDelay * 2^attempt`.
-- **Server guidance:** a numeric `Retry-After` header is used when available.
+- **Delay:** capped exponential backoff using `retryDelay * 2^attempt`; `retryMaxDelay` defaults to 30 seconds.
+- **Server guidance:** `Retry-After` is used when supplied as seconds or an HTTP date, then capped by `retryMaxDelay`.
 
 Retries are useful for temporary outages and rate limits; they cannot fix a missing token, an account plan restriction,
 or an invalid query.
@@ -437,6 +447,7 @@ CRYPTOPANIC_API_PLAN=growth
 CRYPTOPANIC_TIMEOUT=15
 CRYPTOPANIC_RETRY_ATTEMPTS=2
 CRYPTOPANIC_RETRY_DELAY=1
+CRYPTOPANIC_RETRY_MAX_DELAY=30
 ```
 
 Publish the package configuration when you want to inspect or customize it:
@@ -526,12 +537,15 @@ composer install
 composer test
 composer test:unit
 composer test:feature
+composer test:coverage
 composer analyse
 composer validate
 ```
 
 The test suite uses HTTP fakes and does not require live API credentials. Retry timing can be replaced with
-`setSleeper()` to keep tests fast and deterministic.
+`setSleeper()` to keep tests fast and deterministic. The coverage workflow stores the Clover report as a GitHub Actions
+artifact and uploads it to Codecov. For private repositories, add the `CODECOV_TOKEN` Actions secret after installing
+the Codecov GitHub app. To run `composer test:coverage` locally, enable PCOV or Xdebug.
 
 For local development:
 

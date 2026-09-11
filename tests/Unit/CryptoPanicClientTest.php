@@ -13,6 +13,7 @@ use Tigusigalpa\CryptoPanic\Enums\Filter;
 use Tigusigalpa\CryptoPanic\Enums\Kind;
 use Tigusigalpa\CryptoPanic\Enums\Plan;
 use Tigusigalpa\CryptoPanic\Exceptions\ConfigurationException;
+use Tigusigalpa\CryptoPanic\Exceptions\DecodingException;
 use Tigusigalpa\CryptoPanic\Exceptions\ForbiddenException;
 use Tigusigalpa\CryptoPanic\Exceptions\RateLimitException;
 use Tigusigalpa\CryptoPanic\Exceptions\ServerException;
@@ -45,6 +46,15 @@ class CryptoPanicClientTest extends TestCase
     {
         $this->expectException(ConfigurationException::class);
         new CryptoPanicClient(new CryptoPanicConfig(authToken: ''));
+    }
+
+    public function test_invalid_retry_max_delay_throws_before_request(): void
+    {
+        $this->expectException(ConfigurationException::class);
+        new CryptoPanicClient(new CryptoPanicConfig(
+            authToken: self::TEST_TOKEN,
+            retryMaxDelay: 0.0,
+        ));
     }
 
     public function test_config_immutable(): void
@@ -265,7 +275,7 @@ class CryptoPanicClientTest extends TestCase
 
     public function test_error_does_not_leak_token(): void
     {
-        $json = json_encode(['error' => 'Invalid token'], JSON_THROW_ON_ERROR);
+        $json = json_encode(['error' => 'Invalid token: ' . self::TEST_TOKEN], JSON_THROW_ON_ERROR);
         $response = $this->createMockResponse(401, $json);
         $client = $this->createClientWithMockResponse($response);
 
@@ -274,6 +284,30 @@ class CryptoPanicClientTest extends TestCase
             self::fail('Expected UnauthorizedException');
         } catch (UnauthorizedException $e) {
             self::assertStringNotContainsString(self::TEST_TOKEN, $e->getMessage());
+            self::assertStringNotContainsString(self::TEST_TOKEN, json_encode($e->responseBody, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public function test_psr18_transport_error_does_not_leak_token(): void
+    {
+        $successResponse = new GuzzleResponse(200, [], '{}');
+        $fakePsrClient = new FakeThrowingPsr18Client(
+            failuresBeforeSuccess: 1,
+            successResponse: $successResponse,
+            failureMessage: 'Request to https://example.test/?auth_token=' . self::TEST_TOKEN . ' failed',
+        );
+        $client = new CryptoPanicClient(
+            new CryptoPanicConfig(authToken: self::TEST_TOKEN),
+            $fakePsrClient,
+            new HttpFactory(),
+        );
+
+        try {
+            $client->posts(new PostsQuery());
+            self::fail('Expected TransportException');
+        } catch (TransportException $e) {
+            self::assertStringNotContainsString(self::TEST_TOKEN, $e->getMessage());
+            self::assertNull($e->getPrevious());
         }
     }
 
@@ -327,6 +361,32 @@ class CryptoPanicClientTest extends TestCase
 
         $this->expectException(RateLimitException::class);
         $client->posts(new PostsQuery());
+    }
+
+    public function test_retry_after_http_date_is_capped(): void
+    {
+        $rateLimitJson = json_encode(['error' => 'Rate limited'], JSON_THROW_ON_ERROR);
+        $successJson = json_encode(['next' => null, 'previous' => null, 'results' => []], JSON_THROW_ON_ERROR);
+        $responses = [
+            $this->createMockResponse(429, $rateLimitJson, [
+                'retry-after' => gmdate(DATE_RFC7231, time() + 60),
+            ]),
+            $this->createMockResponse(200, $successJson),
+        ];
+        $client = $this->createClientWithMockResponses(
+            $responses,
+            retryAttempts: 1,
+            retryDelay: 0.001,
+            retryMaxDelay: 0.25,
+        );
+        $delays = [];
+        $client->setSleeper(static function (float $delay) use (&$delays): void {
+            $delays[] = $delay;
+        });
+
+        $client->posts(new PostsQuery());
+
+        self::assertSame([0.25], $delays);
     }
 
     public function test_no_retry_on_401(): void
@@ -385,6 +445,15 @@ class CryptoPanicClientTest extends TestCase
 
         $page = $client->posts(new PostsQuery());
         self::assertCount(1, $page->results);
+    }
+
+    public function test_invalid_posts_shape_throws_decoding_exception(): void
+    {
+        $response = $this->createMockResponse(200, json_encode(['results' => 'not-an-array'], JSON_THROW_ON_ERROR));
+        $client = $this->createClientWithMockResponse($response);
+
+        $this->expectException(DecodingException::class);
+        $client->posts(new PostsQuery());
     }
 
     public function test_plan_in_url(): void
@@ -477,7 +546,13 @@ class CryptoPanicClientTest extends TestCase
      *
      * @param HttpResponse[] $responses
      */
-    private function createClientWithMockResponses(array $responses, int $retryAttempts = 0, float $retryDelay = 1.0, string $apiPlan = 'growth'): CryptoPanicClient
+    private function createClientWithMockResponses(
+        array $responses,
+        int $retryAttempts = 0,
+        float $retryDelay = 1.0,
+        string $apiPlan = 'growth',
+        float $retryMaxDelay = 30.0,
+    ): CryptoPanicClient
     {
         $config = new CryptoPanicConfig(
             authToken: self::TEST_TOKEN,
@@ -485,9 +560,22 @@ class CryptoPanicClientTest extends TestCase
             baseUrl: 'https://mock.example.com',
             retryAttempts: $retryAttempts,
             retryDelay: $retryDelay,
+            retryMaxDelay: $retryMaxDelay,
         );
 
-        $client = new MockCryptoPanicClient($config, $responses);
-        return $client;
+        $psrResponses = array_map(
+            static fn(HttpResponse $response): GuzzleResponse => new GuzzleResponse(
+                $response->statusCode,
+                $response->headers,
+                $response->body,
+            ),
+            $responses,
+        );
+
+        return new CryptoPanicClient(
+            $config,
+            new FakeResponsePsr18Client($psrResponses),
+            new HttpFactory(),
+        );
     }
 }

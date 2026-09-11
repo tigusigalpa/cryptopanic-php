@@ -30,7 +30,7 @@
     },
     "require-dev": {
         "phpunit/phpunit": "^9.5 || ^10.0 || ^11.0",
-        "orchestra/testbench": "^8.0 || ^9.0 || ^10.0",
+        "orchestra/testbench": "^8.0 || ^9.0 || ^10.0 || ^11.0",
         "guzzlehttp/guzzle": "^7.0",
         "phpstan/phpstan": "^1.10 || ^2.0"
     },
@@ -58,8 +58,8 @@
         "test": "phpunit",
         "test:unit": "phpunit --testsuite Unit",
         "test:feature": "phpunit --testsuite Feature",
-        "analyse": "phpstan analyse",
-        "validate": "composer validate --strict"
+        "test:coverage": "phpunit --coverage-clover coverage/clover.xml --coverage-text",
+        "analyse": "phpstan analyse --memory-limit=512M"
     },
     "minimum-stability": "stable",
     "prefer-stable": true

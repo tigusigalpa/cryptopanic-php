@@ -1,4 +1,5 @@
 /.phpunit.cache
+/coverage
 /vendor
 /composer.lock
 /.env

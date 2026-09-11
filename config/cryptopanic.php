@@ -52,17 +52,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Retry Attempts & Delay
+    | Retry Settings
     |--------------------------------------------------------------------------
     |
     | Number of automatic retries on HTTP 429 and selected 5xx responses
-    | (0 = no retry), and the base delay in seconds for exponential
-    | backoff between retries.
+    | (0 = no retry), the base delay for exponential backoff, and the
+    | maximum permitted delay in seconds. All retry waits are capped.
     |
     */
     'retry_attempts' => env('CRYPTOPANIC_RETRY_ATTEMPTS', 0),
 
     'retry_delay' => env('CRYPTOPANIC_RETRY_DELAY', 1.0),
+
+    'retry_max_delay' => env('CRYPTOPANIC_RETRY_MAX_DELAY', 30.0),
 
     /*
     |--------------------------------------------------------------------------
@@ -72,5 +74,5 @@ return [
     | The User-Agent header value sent with every request.
     |
     */
-    'user_agent' => env('CRYPTOPANIC_USER_AGENT', 'cryptopanic-php/1.0.0'),
+    'user_agent' => env('CRYPTOPANIC_USER_AGENT', 'cryptopanic-php/1.1.0'),
 ];

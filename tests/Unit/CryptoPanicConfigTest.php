@@ -18,7 +18,8 @@ class CryptoPanicConfigTest extends TestCase
         self::assertSame(15.0, $config->timeout);
         self::assertSame(0, $config->retryAttempts);
         self::assertSame(1.0, $config->retryDelay);
-        self::assertSame('cryptopanic-php/1.0.0', $config->userAgent);
+        self::assertSame(30.0, $config->retryMaxDelay);
+        self::assertSame('cryptopanic-php/1.1.0', $config->userAgent);
     }
 
     public function test_from_array(): void
@@ -30,6 +31,7 @@ class CryptoPanicConfigTest extends TestCase
             'timeout' => 30.0,
             'retry_attempts' => 5,
             'retry_delay' => 2.0,
+            'retry_max_delay' => 10.0,
             'user_agent' => 'myapp/1.0',
         ]);
 
@@ -39,7 +41,20 @@ class CryptoPanicConfigTest extends TestCase
         self::assertSame(30.0, $config->timeout);
         self::assertSame(5, $config->retryAttempts);
         self::assertSame(2.0, $config->retryDelay);
+        self::assertSame(10.0, $config->retryMaxDelay);
         self::assertSame('myapp/1.0', $config->userAgent);
+    }
+
+    public function test_from_env_preserves_zero_retry_delay(): void
+    {
+        putenv('CRYPTOPANIC_RETRY_DELAY=0');
+
+        try {
+            $config = CryptoPanicConfig::fromEnv();
+            self::assertSame(0.0, $config->retryDelay);
+        } finally {
+            putenv('CRYPTOPANIC_RETRY_DELAY');
+        }
     }
 
     public function test_from_array_defaults(): void
