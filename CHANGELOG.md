@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for both delta-seconds and HTTP-date forms of the `Retry-After` header.
 - Early validation for malformed base URLs, plans, timeouts, and retry configuration.
 - Production-pipeline tests using a queue-backed PSR-18 client instead of a duplicated test client implementation.
-- Laravel 13 test coverage through Orchestra Testbench 11, while retaining the earlier supported Laravel versions.
+- A CI matrix covering the PHP 8.1 framework-neutral client plus supported Laravel 12 and 13 integrations.
 - GitHub Actions workflows for the PHP/Laravel test matrix, PCOV coverage with Codecov upload, and weekly CodeQL scans.
 - Dependabot updates for Composer and GitHub Actions dependencies.
 

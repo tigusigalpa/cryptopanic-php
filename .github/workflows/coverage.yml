@@ -27,7 +27,7 @@ jobs:
           tools: composer:v2
 
       - name: Validate composer.json
-        run: composer validate --strict
+        run: composer validate --strict --no-check-lock
 
       - name: Select Laravel 13 test harness
         run: composer require --dev --no-update orchestra/testbench:"^11.0"

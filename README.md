@@ -60,7 +60,8 @@ build PHP applications:
 - `ext-json` and `ext-curl`.
 - Composer.
 
-The Laravel bridge is tested against Laravel 10 through 13. Laravel 13 itself requires PHP 8.3 or newer.
+The framework-neutral client is tested on PHP 8.1 and later. The Laravel bridge is tested against Laravel 12 and 13;
+Laravel 12 requires PHP 8.2+, while Laravel 13 requires PHP 8.3+.
 
 ```bash
 composer require tigusigalpa/cryptopanic-php
@@ -539,7 +540,7 @@ composer test:unit
 composer test:feature
 composer test:coverage
 composer analyse
-composer validate
+composer validate --strict --no-check-lock
 ```
 
 The test suite uses HTTP fakes and does not require live API credentials. Retry timing can be replaced with
